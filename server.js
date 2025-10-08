@@ -4,37 +4,44 @@ const mongoose = require("mongoose");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const bcrypt = require("bcrypt");
 
-// Environment variables (Render automatically injects them)
+// ==== ENVIRONMENT CONFIG ====
 const PORT = process.env.PORT || 5000;
 const MONGO_URI =
   process.env.MONGODB_URI || "mongodb://localhost:27017/poll-app";
 const FRONTEND_URL =
-  process.env.FRONTEND_URL || "https://livepoll-six.vercel.app/"; // Your Vercel frontend
+  process.env.FRONTEND_URL || "https://livepoll-six.vercel.app";
 
-// Initialize Express + HTTP server
+// ==== EXPRESS + HTTP + SOCKET.IO ====
 const app = express();
 const server = http.createServer(app);
 
-// WebSocket setup
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_URL, // Allow your Vercel frontend to connect
+    origin: FRONTEND_URL,
     methods: ["GET", "POST"],
   },
 });
 
-// Middleware
+// ==== MIDDLEWARE ====
 app.use(cors({ origin: FRONTEND_URL }));
 app.use(express.json());
 
-// MongoDB connection
+// ==== DATABASE CONNECTION ====
 mongoose
   .connect(MONGO_URI)
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// Poll schema
+// ==== MODELS ====
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, lowercase: true },
+  password: { type: String, required: true },
+  role: { type: String, default: "user" },
+});
+const User = mongoose.model("User", userSchema);
+
 const pollSchema = new mongoose.Schema({
   question: { type: String, required: true },
   options: [{ type: String, required: true }],
@@ -44,8 +51,63 @@ const pollSchema = new mongoose.Schema({
 });
 const Poll = mongoose.model("Poll", pollSchema);
 
-// Routes
-app.get("/", (req, res) => res.send("✅ Poll API running"));
+// ==== ROUTES ====
+
+// --- Root route ---
+app.get("/", (req, res) => {
+  res.send("✅ LivePoll Backend Running Successfully!");
+});
+
+// --- Auth: Register ---
+app.post("/api/signup", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password)
+      return res.status(400).json({ error: "All fields are required" });
+
+    if (!/^\S+@\S+\.\S+$/.test(email))
+      return res.status(400).json({ error: "Invalid email format" });
+
+    const existing = await User.findOne({ email: email.toLowerCase() });
+    if (existing)
+      return res.status(400).json({ error: "Email already registered" });
+
+    const hashed = await bcrypt.hash(password, 10);
+    const newUser = new User({ email: email.toLowerCase(), password: hashed });
+    await newUser.save();
+
+    res.json({ message: "Registration successful, please login." });
+  } catch (err) {
+    console.error("Signup Error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// --- Auth: Login ---
+app.post("/api/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password)
+      return res.status(400).json({ error: "All fields are required" });
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) return res.status(401).json({ error: "Invalid credentials" });
+
+    const redirect = user.role === "admin" ? "/Admin/Dashboard" : "/Dashboard";
+
+    res.json({ success: true, role: user.role, redirect });
+  } catch (err) {
+    console.error("Login Error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// --- Get All Polls ---
 app.get("/api/polls", async (req, res) => {
   try {
     const polls = await Poll.find().sort({ createdAt: -1 });
@@ -55,6 +117,7 @@ app.get("/api/polls", async (req, res) => {
   }
 });
 
+// --- Create Poll ---
 app.post("/api/polls", async (req, res) => {
   const { question, options } = req.body;
   if (!question || !options || options.length < 2) {
@@ -62,6 +125,7 @@ app.post("/api/polls", async (req, res) => {
       .status(400)
       .json({ error: "Question and at least 2 options required" });
   }
+
   try {
     const poll = new Poll({
       question,
@@ -76,6 +140,7 @@ app.post("/api/polls", async (req, res) => {
   }
 });
 
+// --- Vote on Poll ---
 app.post("/api/polls/:id/vote", async (req, res) => {
   const { optionIndex } = req.body;
   try {
@@ -86,6 +151,7 @@ app.post("/api/polls/:id/vote", async (req, res) => {
     poll.counts[optionIndex] += 1;
     poll.totalVotes += 1;
     await poll.save();
+
     io.emit("voteUpdate", poll);
     res.json(poll);
   } catch (err) {
@@ -93,7 +159,7 @@ app.post("/api/polls/:id/vote", async (req, res) => {
   }
 });
 
-// WebSocket events
+// ==== SOCKET.IO ====
 io.on("connection", (socket) => {
   console.log("🟢 Client connected:", socket.id);
   socket.on("disconnect", () =>
@@ -101,5 +167,7 @@ io.on("connection", (socket) => {
   );
 });
 
-// Start server
-server.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
+// ==== START SERVER ====
+server.listen(PORT, () =>
+  console.log(`🚀 Backend running on http://localhost:${PORT}`)
+);
