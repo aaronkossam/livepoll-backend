@@ -5,6 +5,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
+require("dotenv").config();
 
 // ==== ENVIRONMENT CONFIG ====
 const PORT = process.env.PORT || 5000;
@@ -13,19 +14,26 @@ const MONGO_URI =
 const FRONTEND_URL =
   process.env.FRONTEND_URL || "https://livepoll-six.vercel.app";
 
-// ==== EXPRESS + HTTP + SOCKET.IO ====
 const app = express();
 const server = http.createServer(app);
 
+// ==== SOCKET.IO WITH CORS ====
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: [FRONTEND_URL, "http://localhost:3000"], // ✅ Allow both production + local
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
 // ==== MIDDLEWARE ====
-app.use(cors({ origin: FRONTEND_URL }));
+app.use(
+  cors({
+    origin: [FRONTEND_URL, "http://localhost:3000"],
+    methods: ["GET", "POST"],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // ==== DATABASE CONNECTION ====
@@ -52,8 +60,6 @@ const pollSchema = new mongoose.Schema({
 const Poll = mongoose.model("Poll", pollSchema);
 
 // ==== ROUTES ====
-
-// --- Root route ---
 app.get("/", (req, res) => {
   res.send("✅ LivePoll Backend Running Successfully!");
 });
@@ -62,7 +68,6 @@ app.get("/", (req, res) => {
 app.post("/api/signup", async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password)
       return res.status(400).json({ error: "All fields are required" });
 
@@ -134,9 +139,13 @@ app.post("/api/polls", async (req, res) => {
       counts: new Array(options.length).fill(0),
     });
     const savedPoll = await poll.save();
+
+    // ✅ Emit real-time event to all clients
     io.emit("pollCreated", savedPoll);
+
     res.status(201).json(savedPoll);
   } catch (err) {
+    console.error("Poll creation error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -149,18 +158,22 @@ app.post("/api/polls/:id/vote", async (req, res) => {
     if (!poll || optionIndex < 0 || optionIndex >= poll.options.length) {
       return res.status(400).json({ error: "Invalid poll or option" });
     }
+
     poll.counts[optionIndex] += 1;
     poll.totalVotes += 1;
     await poll.save();
 
+    // ✅ Emit vote update
     io.emit("voteUpdate", poll);
+
     res.json(poll);
   } catch (err) {
+    console.error("Vote error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ==== SOCKET.IO ====
+// ==== SOCKET.IO EVENTS ====
 io.on("connection", (socket) => {
   console.log("🟢 Client connected:", socket.id);
   socket.on("disconnect", () =>
@@ -169,6 +182,7 @@ io.on("connection", (socket) => {
 });
 
 // ==== START SERVER ====
-server.listen(PORT, () =>
-  console.log(`🚀 Backend running on http://localhost:${PORT}`)
-);
+server.listen(PORT, () => {
+  console.log(`🚀 Backend running on port ${PORT}`);
+  console.log(`🌐 Allowed frontend: ${FRONTEND_URL}`);
+});
