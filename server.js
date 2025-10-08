@@ -98,7 +98,7 @@ app.post("/api/login", async (req, res) => {
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) return res.status(401).json({ error: "Invalid credentials" });
 
-    const redirect = user.role === "admin" ? "/Admin/Dashboard" : "/Dashboard";
+    const redirect = user.role === "admin" ? "/Admin/Dashboard" : "/StaffPage";
 
     res.json({ success: true, role: user.role, redirect });
   } catch (err) {
