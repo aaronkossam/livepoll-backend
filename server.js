@@ -1,4 +1,3 @@
-// server.js
 const express = require("express");
 const mongoose = require("mongoose");
 const http = require("http");
@@ -20,7 +19,7 @@ const server = http.createServer(app);
 // ==== SOCKET.IO WITH CORS ====
 const io = new Server(server, {
   cors: {
-    origin: [FRONTEND_URL, "http://localhost:3000"], // ✅ Allow both production + local
+    origin: [FRONTEND_URL, "http://localhost:3000"],
     methods: ["GET", "POST"],
     credentials: true,
   },
@@ -163,7 +162,7 @@ app.post("/api/polls/:id/vote", async (req, res) => {
     poll.totalVotes += 1;
     await poll.save();
 
-    // ✅ Emit vote update
+    //  Emit vote update
     io.emit("voteUpdate", poll);
 
     res.json(poll);
@@ -175,9 +174,9 @@ app.post("/api/polls/:id/vote", async (req, res) => {
 
 // ==== SOCKET.IO EVENTS ====
 io.on("connection", (socket) => {
-  console.log("🟢 Client connected:", socket.id);
+  console.log(" Client connected:", socket.id);
   socket.on("disconnect", () =>
-    console.log("🔴 Client disconnected:", socket.id)
+    console.log(" Client disconnected:", socket.id)
   );
 });
 
