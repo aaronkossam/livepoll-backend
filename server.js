@@ -91,12 +91,12 @@ app.post("/api/signup", async (req, res) => {
 // --- Auth: Login ---
 app.post("/api/login", async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body;
 
     if (!email || !password)
       return res.status(400).json({ error: "All fields are required" });
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: email.toLowerCase(), role });
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const isValid = await bcrypt.compare(password, user.password);
